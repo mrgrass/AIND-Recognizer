@@ -77,7 +77,25 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+
+        b_s = float('inf')
+        b_model = None
+
+        for n in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                N, features = self.X.shape
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                s = -2 * logL + (n ** 2 + 2 * features * n - 1) * np.log(N)
+            except:
+                s = float('inf')
+
+            if s < b_s:
+                b_s = s
+                b_model = model
+
+
+        return b_model
 
 
 class SelectorDIC(ModelSelector):
@@ -93,8 +111,29 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        b_s = float('-inf')
+        b_model = None
 
+        for n in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                model = self.base_model(n)
+                logL = model.score(self.X, self.lengths)
+                tmp_scores = []
+                for word in self.words:
+                    if word != self.this_word:
+                        tmp_scores.append(model.score(*self.hwords[word]))
+
+                s = logL - np.mean(tmp_scores)
+                #means = np.mean([model.score(*self.hwords[word]) for word in self.words if word != self.this_word])
+                #score = logL - means
+            except:
+                s = float('-inf')
+
+            if s > b_s:
+                b_s = s
+                b_model = model
+
+        return b_model
 
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
@@ -105,4 +144,32 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        raise NotImplementedError
+
+        b_s = float('-inf')
+        b_model = self.base_model(3)
+        
+        if len(self.sequences) < 3:
+            return b_model
+        
+        for n in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                scores = []
+                model = self.base_model(n)
+                kf = KFold()
+        
+                for train_index, test_index in kf.split(self.sequences):
+                    X_train, len_train = combine_sequences(train_index, self.sequences)
+                    X_test, len_test = combine_sequences(test_index, self.sequences)
+                    model.fit(X_train, len_train)
+                    tmp_s = model.score(X_test, len_test)
+                    scores.append(tmp_s)
+            
+                s = statistics.mean(scores)
+                
+                if s > b_s:
+                    b_s = s
+                    b_model = model
+            except:
+                pass
+        
+        return b_model
